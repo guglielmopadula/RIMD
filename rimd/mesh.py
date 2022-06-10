@@ -10,6 +10,7 @@ import igl
 import numpy as np
 import math
 import scipy
+from queue import Queue
 
 class Mesh:
     def buildCotWeights(self):
@@ -129,7 +130,137 @@ class RIMD:
             rimd_features.append(feature)
         return rimd_features                
                 
+    
+    def BFS_initialize(self, rimd_vectors):
+    
+        num_verts = self.baseMesh.verts.shape[0];
+        # Create a list of R matrices
+        R=[0]*num_verts
+        #Create the color list which denotes the state of visitation
+        Color=[0]*num_verts
+        # Create the parent list
+        Parent=[0]*num_verts
+
+    
+        # Define some constant
+        white = -2; # undiscover
+        gray = -1; # if u is discovered, the adjacent vertex v is undiscovered
+        black = 0; # discovered
+        unknown = -3;
+    
+        # Initialization
+        for i in range(num_verts):
+            Color[i] = white;
+            Parent[i] = -1; # Parent is unknown
         
+        # Visit the start vertex
+        #I take the first vertex as the start vertex
+        s = 0;
+        Color[s] = gray;
+        Parent[s] = unknown;
+    
+        #Set to the identity matrix
+        R[s]=np.eye(3);
+    
+        Q=Queue();
+        # put the start vertex into the queue
+        Q.put(s);
+    
+        while (not Q.empty()):
+            u = Q.get();
+            for i in range(len(self.baseMesh.neighbors[u])):
+                # Compute the initial value
+                Ru = R[u];
+                dRuv = scipy.linalg.expm(rimd_vectors[u][i]);
+
+    
+                v = self.baseMesh.neighbors[u][i];
+                if (Color[v] == white):
+                    Color[v] = gray;
+                    Parent[v] = u;
+                    Q.put(v);
+                    R[v] = Ru @ dRuv;
+                
+            
+            Color[u] = black;
+        
+        return R
+    
+    
+    
+    def quickReconstruct(self, rimd_vectors):
+        num_verts = self.baseMesh.verts.shape[0];
+        P=np.zeros([num_verts,3])
+        P_prime=np.zeros([num_verts,3])
+        for i in range(num_verts):
+            P[i,:] = self.baseMesh.verts[i,:]
+    
+        R=[0]*num_verts
+        #Create the color list which denotes the state of visitation
+        Color=[0]*num_verts
+        # Create the parent list
+        Parent=[0]*num_verts
+        # Define some constant
+        white = -2; # undiscover
+        gray = -1; # if u is discovered, the adjacent vertex v is undiscovered
+        black = 0; # discovered
+        unknown = -3;
+        # Initialization
+        for i in range(num_verts):
+            Color[i] = white;
+            Parent[i] = -1; # Parent is unknown
+
+        # Choose an arbitrary vertex
+        # I take the first vertex as the start vertex
+        s = 0;
+        Color[s] = gray;
+        Parent[s] = unknown;
+        P_prime[s,:] = P[s,:];
+    
+        # Set to the identity matrix
+        R[s]=np.eye(3)
+    
+        # Create an empty queue
+        Q=Queue();
+        # put the start vertex into the queue
+        Q.put(s);
+
+        while (not Q.empty()):
+            u = Q.get();
+            for i in range(len(self.baseMesh.neighbors[u])):
+                # Compute the initial value
+                Ru = R[u];
+                dRuv = scipy.linalg.expm(rimd_vectors[u][i]);
+    
+                v=self.baseMesh.neighbors[u][i]
+                if (Color[v] == white):
+                    Color[v] = gray;
+                    Parent[v] = u;
+                    Q.put(v);
+                    R[v] = Ru @ dRuv;
+                    evu=np.zeros(3)
+                    temp=np.zeros(3)
+                    temp = self.baseMesh.verts[v,:] - self.baseMesh.verts[u,:];
+                    evu[0] = temp[0];
+                    evu[1] = temp[1];
+                    evu[2] = temp[2];
+                    Sv = rimd_vectors[v][-1];
+                    evu_prime = R[v] @ Sv @ evu;
+    
+                    temp[0] = evu_prime[0];
+                    temp[1] = evu_prime[1];
+                    temp[2] = evu_prime[2]
+                    # Update vertex
+                    P_prime[v, 0] = temp[0] + P_prime[u, 0];
+                    P_prime[v, 0] = temp[1] + P_prime[u, 1];
+                    P_prime[v, 2] = temp[2] + P_prime[u, 2];
+                
+            
+            Color[u] = black;
+        
+    
+        return P_prime;
+    
     
     def __init__(self, base, target):
         self.baseMesh=base
